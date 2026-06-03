@@ -18,7 +18,11 @@ REM Re-launch elevated if not already administrator.
 net session >nul 2>&1
 if %errorlevel% NEQ 0 (
     echo Requesting administrator privileges...
-    powershell -NoProfile -Command "Start-Process -FilePath '%~f0' -ArgumentList '%*' -Verb RunAs"
+    if "%~1"=="" (
+        powershell -NoProfile -Command "Start-Process -FilePath '%~f0' -Verb RunAs"
+    ) else (
+        powershell -NoProfile -Command "Start-Process -FilePath '%~f0' -ArgumentList '%*' -Verb RunAs"
+    )
     exit /b
 )
 
