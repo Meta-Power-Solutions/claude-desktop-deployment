@@ -26,11 +26,9 @@
     (e.g. -SkipVmPlatform, -Architecture arm64, -MsixPath C:\Deploy\Claude.msix).
 
 .EXAMPLE
-    # Default: pull latest from main and install machine-wide:
     powershell -ExecutionPolicy Bypass -File .\Bootstrap-Install.ps1
 
 .EXAMPLE
-    # Pull from a release branch and forward an installer option:
     .\Bootstrap-Install.ps1 -Ref release -SkipVmPlatform
 
 .NOTES
@@ -55,10 +53,7 @@ $ScriptPath = 'scripts/Install-ClaudeDesktop.ps1'
 $RawUrl     = "https://raw.githubusercontent.com/$Owner/$Repo/$Ref/$ScriptPath"
 
 # Ensure modern TLS on older Windows PowerShell hosts.
-try {
-    [Net.ServicePointManager]::SecurityProtocol = `
-        [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
-} catch { }
+try { [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12 } catch { }
 
 # --- Prerequisite checks ---------------------------------------------------
 # No Git or GitHub CLI is required: the installer is pulled over HTTPS using
@@ -69,8 +64,7 @@ function Test-Prerequisites {
     $ok = $true
 
     # 1. PowerShell 5.1 or later
-    if ($PSVersionTable.PSVersion.Major -lt 5 -or
-        ($PSVersionTable.PSVersion.Major -eq 5 -and $PSVersionTable.PSVersion.Minor -lt 1)) {
+    if ($PSVersionTable.PSVersion.Major -lt 5 -or ($PSVersionTable.PSVersion.Major -eq 5 -and $PSVersionTable.PSVersion.Minor -lt 1)) {
         Write-Host "  [FAIL] Windows PowerShell 5.1+ required (found $($PSVersionTable.PSVersion))." -ForegroundColor Red
         $ok = $false
     } else {
@@ -95,9 +89,9 @@ function Test-Prerequisites {
             $client.Close()
         } catch { $reach = $false }
         if ($reach) {
-            Write-Host "  [ OK ] Reachable: ${ep}:443" -ForegroundColor Green
+            Write-Host "  [ OK ] Reachable: $ep`:443" -ForegroundColor Green
         } else {
-            Write-Host "  [FAIL] Cannot reach ${ep}:443 (firewall/proxy?)." -ForegroundColor Red
+            Write-Host "  [FAIL] Cannot reach $ep`:443 (firewall/proxy?)." -ForegroundColor Red
             $ok = $false
         }
     }
@@ -108,8 +102,6 @@ if ($SkipPrereqCheck) {
     Write-Host "Skipping prerequisite checks (per -SkipPrereqCheck)." -ForegroundColor Yellow
 } else {
     Write-Host "Checking prerequisites..." -ForegroundColor Cyan
-    # raw.githubusercontent.com: pull the installer; claude.ai: where the installer
-    # then downloads the MSIX.
     $endpoints = @('raw.githubusercontent.com', 'claude.ai')
     if (-not (Test-Prerequisites -Endpoints $endpoints)) {
         Write-Host "ERROR: Prerequisite checks failed. Resolve the items above, or re-run with -SkipPrereqCheck to override." -ForegroundColor Red
@@ -132,7 +124,29 @@ try {
     $ProgressPreference = 'SilentlyContinue'
     Invoke-WebRequest -Uri $RawUrl -OutFile $target -UseBasicParsing -ErrorAction Stop
     $ProgressPreference = $oldProgress
-}
-catch {
+} catch {
     Write-Host "ERROR: Could not download the installer from GitHub." -ForegroundColor Red
-    Write-Host "  $($_.Exception.Message)" -ForegroundColor R
+    Write-Host "  $($_.Exception.Message)" -ForegroundColor Red
+    Write-Host "  Check the network connection and that '$Ref' exists in the repo." -ForegroundColor Red
+    exit 1
+}
+
+if (-not (Test-Path $target) -or (Get-Item $target).Length -eq 0) {
+    Write-Host "ERROR: Downloaded installer is empty." -ForegroundColor Red
+    exit 1
+}
+Write-Host "Downloaded to: $target" -ForegroundColor Green
+
+# --- Run the installer (forward any extra args) ----------------------------
+Write-Host "Running installer..." -ForegroundColor Cyan
+if ($InstallArgs) {
+    & $target -LogPath $WorkDir @InstallArgs
+} else {
+    & $target -LogPath $WorkDir
+}
+$rc = $LASTEXITCODE
+if ($null -eq $rc) { $rc = 0 }
+
+Write-Host ""
+Write-Host "Installer exited with code $rc. Logs are in: $WorkDir" -ForegroundColor Green
+exit $rc
